@@ -14,7 +14,7 @@
               (vector 0 0 0 1))))
       (let ((Bt (kernel ((j (iota 4)))
                   (kernel ((i (iota 4)))
-                    (vector-ref (vector-ref B j) i)))))
+                    (vector-ref (vector-ref B i) j)))))
         (assert (= Bt A))
         (let ((C (kernel ((row A))
                    (kernel ((col Bt))

@@ -20,7 +20,6 @@
     verify-annotate-free-vars
     verify-lower-vectors
     verify-insert-let-regions
-    verify-infer-regions
     verify-uglify-vectors
     verify-remove-let-regions
     verify-flatten-lets
@@ -32,25 +31,36 @@
     (rnrs)
     (harlan helpers)
     (except (elegant-weapons helpers) ident?)
-    (util verify-grammar)
-    (cKanren mk))
+    (util verify-grammar))
 
 (define (region-var? x)
-  (or (symbol? x) (var? x)))
+  (or (symbol? x)))
   
 (grammar-transforms
 
   (%static
-    (Type
+   (SType
+      Var
+      harlan-type
+      (vec SType)
+      (ptr SType)
+      (ref SType)
+      (adt SType)
+      (struct (Var SType) *)
+      (union (Var SType) *)
+      (closure (SType *) -> SType)
+      ((SType *) -> SType))
+   (Type
       Var
       harlan-type
       (vec Type)
       (ptr Type)
       (ref Type)
       (adt Type)
+      (fixed-array Type Integer)
       (struct (Var Type) *)
       (union (Var Type) *)
-      ((Type *) -> Type))
+      (fn (Type *) -> Type))
     (C-Type
       harlan-c-type
       harlan-cl-type
@@ -66,7 +76,10 @@
      (ptr Rho-Type)
      (adt Rho-Type Var)
      (adt Rho-Type)
-     ((Rho-Type *) -> Rho-Type))
+     (struct (Var Rho-Type) *)
+     (union (Var Rho-Type) *)
+     (closure Var (Rho-Type *) -> Rho-Type)
+     (fn (Rho-Type *) -> Rho-Type))
     (Var ident)
     (Integer integer)
     (Binop binop)
@@ -82,7 +95,7 @@
     (Start Module)
     (Module (module Decl +))
     (Decl
-      (extern Var (Type *) -> Type)
+      (extern Var (SType *) -> SType)
       (fn Var (Var *) Value +) ;; depricated, use define instead
       (define (Var Var *) Value +))
     (Value
@@ -122,11 +135,11 @@
   (parse-harlan (%inherits Module)
     (Start Module)
     (Decl
-      (extern Var (Type *) -> Type)
+      (extern Var (SType *) -> SType)
       (define-datatype Var TPattern *)
       (fn Var (Var *) Stmt))
     (TPattern
-     (Var Type *))
+     (Var SType *))
     (Stmt
       (let ((Var Expr) *) Stmt)
       (let-region (RegionVar) Stmt)
@@ -157,6 +170,8 @@
       (if Expr Expr Expr)
       (vector-ref Expr Expr)
       (unsafe-vector-ref Expr Expr)
+      (unsafe-vec-ptr Expr)
+      (lambda (Var *) Expr)
       (let ((Var Expr) *) Expr)
       (kernel ((Var Expr) +) Expr)
       (kernel-r RegionVar ((Var Expr) +) Expr)
@@ -164,11 +179,13 @@
       (iota-r RegionVar Expr)
       (length Expr)
       (int->float Expr)
+      (float->int Expr)
       (make-vector Expr Expr)
       (match Expr EPattern *)
       (Binop Expr Expr)
       (Relop Expr Expr)
-      (call Var Expr *))
+      (call Var Expr *)
+      (invoke Expr Expr *))
     (EPattern
      (MPattern Expr))
     (MPattern
@@ -179,7 +196,7 @@
     (Decl
       (fn Var (Var *) Body)
       (define-datatype Var TPattern *)
-      (extern Var (Type *) -> Type))
+      (extern Var (SType *) -> SType))
     (Body
       (begin Stmt * Body)
       (let ((Var Expr) *) Body)
@@ -217,6 +234,8 @@
       (if Expr Expr Expr)
       (vector-ref Expr Expr)
       (unsafe-vector-ref Expr Expr)
+      (unsafe-vec-ptr Expr)
+      (lambda (Var *) Expr)
       (let ((Var Expr) *) Expr)
       (kernel ((Var Expr) +) Expr)
       (kernel-r RegionVar ((Var Expr) +) Expr)
@@ -224,11 +243,13 @@
       (iota-r RegionVar Expr)
       (length Expr)
       (int->float Expr)
+      (float->int Expr)
       (make-vector Expr Expr)
       (match Expr EPattern *)
       (Binop Expr Expr)
       (Relop Expr Expr)
-      (call Var Expr *)))
+      (call Var Expr *)
+      (invoke Expr Expr *)))
 
   (typecheck (%inherits Module Ret-Stmt)
     (Start Module)
@@ -275,17 +296,21 @@
       (vector-r Rho-Type RegionVar Expr +)
       (vector-ref Rho-Type Expr Expr)
       (unsafe-vector-ref Rho-Type Expr Expr)
+      (unsafe-vec-ptr Rho-Type Expr)
       (kernel Rho-Type (((Var Rho-Type) (Expr Rho-Type)) +) Expr)
       (kernel-r Rho-Type RegionVar (((Var Rho-Type) (Expr Rho-Type)) +) Expr)
       (iota Expr)
       (iota-r RegionVar Expr)
       (length Expr)
       (int->float Expr)
+      (float->int Expr)
       (make-vector Rho-Type Expr Expr)
       (match Rho-Type Expr ((Var Var *) Expr) *)
       (Binop Rho-Type Expr Expr)
       (Relop Rho-Type Expr Expr)
-      (call Expr Expr *)))
+      (call Expr Expr *)
+      (lambda Rho-Type ((Var Rho-Type) *) Expr)
+      (invoke Expr Expr *)))
 
   (expand-primitives
     (%inherits Module Decl Body Ret-Stmt)
@@ -317,9 +342,11 @@
       (begin Stmt * Expr)
       (vector-ref Rho-Type Expr Expr)
       (unsafe-vector-ref Rho-Type Expr Expr)
+      (unsafe-vec-ptr Rho-Type Expr)
       (kernel Rho-Type RegionVar (((Var Rho-Type) (Expr Rho-Type)) +) Expr)
       (length Expr)
       (int->float Expr)
+      (float->int Expr)
       (make-vector Rho-Type RegionVar Expr)
       (vector Rho-Type RegionVar Expr +)
       (iota Expr)
@@ -327,14 +354,16 @@
       (match Rho-Type Expr ((Var Var *) Expr) *)
       (Binop Expr Expr)
       (Relop Expr Expr)
-      (call Expr Expr *)))
+      (call Expr Expr *)
+      (lambda Rho-Type ((Var Rho-Type) *) Expr)
+      (invoke Expr Expr *)))
 
   (desugar-match
    (%inherits Module Body Stmt Ret-Stmt)
     (Start Module)
     (Decl
       (extern Var (Type *) -> Type)
-      (typedef Var Type)
+      (typedef Var Rho-Type)
       (fn Var (Var *) Rho-Type Body))
     (Expr
       (char Char)
@@ -350,9 +379,11 @@
       (begin Stmt * Expr)
       (vector-ref Rho-Type Expr Expr)
       (unsafe-vector-ref Rho-Type Expr Expr)
+      (unsafe-vec-ptr Rho-Type Expr)
       (kernel Rho-Type RegionVar (((Var Rho-Type) (Expr Rho-Type)) +) Expr)
       (length Expr)
       (int->float Expr)
+      (float->int Expr)
       (make-vector Rho-Type RegionVar Expr)
       (vector Rho-Type RegionVar Expr +)
       (iota Expr)
@@ -387,12 +418,14 @@
       (begin Stmt * Expr)
       (vector-ref Rho-Type Expr Expr)
       (unsafe-vector-ref Rho-Type Expr Expr)
+      (unsafe-vec-ptr Rho-Type Expr)
       (kernel Rho-Type RegionVar Integer (Expr +)
               (((Var Rho-Type) (Expr Rho-Type) Integer) *) Expr)
       (kernel Rho-Type RegionVar Integer
               (((Var Rho-Type) (Expr Rho-Type) Integer) *) Expr)
       (length Expr)
       (int->float Expr)
+      (float->int Expr)
       (make-vector Rho-Type RegionVar Expr)
       (vector Rho-Type RegionVar Expr +)
       (Binop Expr Expr)
@@ -420,10 +453,12 @@
       (begin Stmt * Expr)
       (vector-ref Rho-Type Expr Expr)
       (unsafe-vector-ref Rho-Type Expr Expr)
+      (unsafe-vec-ptr Rho-Type Expr)
       (kernel Rho-Type RegionVar (Expr +)
               (((Var Rho-Type) (Expr Rho-Type) Integer) *) Expr)
       (length Expr)
       (int->float Expr)
+      (float->int Expr)
       (make-vector Rho-Type RegionVar Expr)
       (vector Rho-Type RegionVar Expr +)
       (Binop Expr Expr)
@@ -500,8 +535,10 @@
       (vector-ref Rho-Type Expr Expr)
       (length Expr)
       (int->float Expr)
+      (float->int Expr)
       (make-vector Rho-Type RegionVar Expr)
       (vector Rho-Type RegionVar Expr +)
+      (unsafe-vec-ptr Rho-Type Expr)
       (not Expr)
       (Binop Expr Expr)
       (Relop Expr Expr)
@@ -547,6 +584,7 @@
       (if Triv Triv Triv)
       (call Triv Triv *)
       (int->float Triv)
+      (float->int Triv)
       (length Triv)
       (char Char)
       (int Integer)
@@ -559,6 +597,7 @@
       (unbox Rho-Type Var Triv)
       (c-expr C-Type Var)
       (vector-ref Rho-Type Triv Triv)
+      (unsafe-vec-ptr Rho-Type Triv)
       (not Triv)
       (field Triv Var)
       (Binop Triv Triv)
@@ -599,6 +638,7 @@
       (box Var Rho-Type Triv)
       (unbox Rho-Type Var Triv)
       (int->float Triv)
+      (float->int Triv)
       (length Triv)
       (addressof Triv)
       (deref Triv)
@@ -606,6 +646,7 @@
       (call Triv Triv *)
       (c-expr C-Type Var)
       (vector-ref Rho-Type Triv Triv)
+      (unsafe-vec-ptr Rho-Type Triv)
       (not Triv)
       (field Triv Var)
       (Binop Triv Triv)
@@ -669,66 +710,6 @@
       (do Triv)
       (begin Stmt * Stmt)
       Ret-Stmt))
-
-  (infer-regions (%inherits Module Ret-Stmt)
-    (Start Module)
-    (Decl
-      (extern Var (Rho-Type *) -> Rho-Type)
-      (fn Var (Var *) Type
-          (input-regions ((Var *) *))
-          (output-regions (Var *))
-          Body))
-    (Body
-      (begin Stmt * Body)
-      (let ((Var Rho-Type Lifted-Expr) *) Body)
-      (let ((Var Rho-Type) *) Body)
-      (let-region (Var) Body)
-      (if Triv Body)
-      (if Triv Body Body)
-      Ret-Stmt)
-    (Stmt
-      (print Triv)
-      (print Triv Triv)
-      (assert Triv)
-      (set! Triv Triv)
-      (kernel
-        (Triv +)
-        (free-vars (Var Rho-Type) *)
-        Stmt)
-      (let ((Var Rho-Type Lifted-Expr) *) Stmt)
-      (let ((Var Rho-Type) *) Stmt)
-      (let-region (Var) Stmt)
-      (if Triv Stmt)
-      (if Triv Stmt Stmt)
-      (for (Var Triv Triv Triv) Stmt)
-      (while Triv Stmt)
-      (do Triv)
-      (begin Stmt * Stmt)
-      (error Var)
-      Ret-Stmt)
-    (Lifted-Expr
-      (make-vector Rho-Type Triv)
-      Triv)
-    (Triv
-      (bool Boolean)
-      (char Char)
-      (int Integer)
-      (u64 Number)
-      (float Float)
-      (str String)
-      (var Rho-Type Var)
-    (empty-struct)  
-      (int->float Triv)
-      (length Triv)
-      (addressof Triv)
-      (deref Triv)
-      (if Triv Triv Triv)
-      (call Triv Triv *)
-      (c-expr C-Type Var)
-      (vector-ref Rho-Type Triv Triv)
-      (not Triv)
-      (Binop Triv Triv)
-      (Relop Triv Triv)))
 
   (uglify-vectors (%inherits Module)
     (Start Module)
@@ -878,7 +859,7 @@
       CommonDecl
       (kernel Var ((Var Type) *) Stmt))
     (CommonDecl
-     (fn Var (Var *) ((Type *) -> Type) Body)
+     (fn Var (Var *) (fn (Type *) -> Type) Body)
      (typedef Var Type)
      (extern Var (Type *) -> Type))
     (Stmt 
@@ -942,7 +923,7 @@
       Ret-Stmt))
 
   (compile-module
-    (%inherits Kernel Body Ret-Stmt)
+    (%inherits Kernel Ret-Stmt)
     (Start Module)
     (Module (Decl *))
     (Decl
@@ -956,6 +937,12 @@
      (typedef Var Type)
      (extern Type Var (Type *))
      (extern Var (Type *) -> Type))
+    (Body
+      (begin Stmt * Body)
+      (if Expr Body)
+      (if Expr Body Body)
+      Stmt
+      Ret-Stmt)
     (Stmt
       (print Expr)
       (print Expr Expr)
@@ -968,6 +955,8 @@
       (for (Var Expr Expr Expr) Stmt)
       (while Expr Stmt)
       (do Expr)
+      (goto Var)
+      (label Var)
       Ret-Stmt)
     (Expr
       (bool Boolean)

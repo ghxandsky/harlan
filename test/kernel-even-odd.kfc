@@ -1,0 +1,21 @@
+;; another look at recursion in kernels.
+;;
+;; This makes sure we can do mutual recursion.
+
+(%testspec
+ (%tags recursive))
+
+(module
+  (define (even n)
+    (if (= 0 n)
+        #t
+        (odd (- n 1))))
+
+  (define (odd n)
+    (if (= 0 n)
+        #f
+        (even (- n 1))))
+
+  (define (main)
+    (println (kernel ((i (iota 5))) (even i)))
+    0))

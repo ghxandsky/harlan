@@ -12,7 +12,7 @@
 ;; This also lifts the typedefs to the top, so that we can construct
 ;; mutually recursive structures.
 (define-match (compile-decl in-kernel?)
-  ((fn ,name ,args (,arg-types -> ,ret-type)
+  ((fn ,name ,args (fn ,arg-types -> ,ret-type)
      ,[(compile-stmt in-kernel?) -> stmt])
    (let ((arg-types (if in-kernel?
                         arg-types
@@ -27,7 +27,12 @@
                            ret-type))))
      (values '() `((func ,ret-type ,name ,(map list args arg-types) ,stmt)))))
   ((extern ,name ,arg-types -> ,rtype)
-   (values '() `((extern ,rtype ,name ,arg-types))))
+   (let ((arg-types (map (lambda (t)
+                           (if (equal? t '(ptr region))
+                               '(ref (ptr region))
+                               t))
+                         arg-types)))
+     (values '() `((extern ,rtype ,name ,arg-types)))))
   ((global ,type ,name ,[(compile-expr in-kernel?) -> e])
    (values '() `((global ,type ,name ,e))))
   ((typedef ,name ,t)
@@ -66,6 +71,8 @@
      ,[stmt*] ...)
    `(for (,i ,start ,end ,step) . ,stmt*))
   ((error ,x) `(do (call (var harlan_error) (str ,(symbol->string x)))))
+  ((goto ,name) `(goto ,name))
+  ((label ,name) `(label ,name))
   ((do ,[(compile-expr in-kernel?) -> e]) `(do ,e)))
 
 (define-match (compile-expr in-kernel?)

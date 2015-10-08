@@ -1,0 +1,88 @@
+(module
+
+  (define-datatype Expr
+    (variable int)
+    (Lambda Expr)
+    (app Expr Expr))
+
+  (define-datatype Value
+    (error)
+    (closure Expr Env))
+
+  (define-datatype Env
+    (empty-env)
+    (extended-env Value Env))
+
+  (define-datatype Cont
+    (initial-k)
+    (eval-k Expr Env Cont)
+    (lookup-k int Env Cont)
+    (rator-k Expr Env Cont)
+    (rand-k Value Cont)
+    (final-k Value))
+
+  (define-datatype Thunk
+    (k-t Cont)
+    (apply-k-t Cont Value))
+  
+  (define (print-val v)
+    (match v
+      ((error) (print "(error)") 0)
+      ((closure b e)
+       (print "(closure ")
+       ;;(print-expr b)
+       ;;(print " ")
+       ;;(print-env e)
+       (print " ...")
+       (print ")")
+       0)))
+  
+  (define (apply-k k v)
+    (match k
+      ((eval-k e env k)
+       (match e
+         ((variable x) (k-t (lookup-k x env k)))
+         ((Lambda b) (apply-k-t k (closure b env)))
+         ((app e1 e2)
+          (k-t (eval-k e1 env (rator-k e2 env k))))))
+      ((lookup-k x e k)
+       (match e
+         ((empty-env) (k-t (final-k (error))))
+         ((extended-env v e)
+          (if (= 0 x)
+              (apply-k-t k v)
+              (k-t (lookup-k (- x 1) e k))))))
+      ((rator-k e2 env k)
+       (k-t (eval-k e2 env (rand-k v k))))
+      ((rand-k v k)
+       (match v
+         ((error) (k-t (final-k (error))))
+         ((closure b e)
+          (k-t (eval-k b (extended-env v e) k)))))
+      ((initial-k) (k-t (final-k v)))
+      ((final-k v) (k-t (final-k v)))))
+
+  (define (apply-thunk t)
+    (vector-ref
+     (kernel ((t (vector t)))
+       (match t
+         ((k-t k) (apply-k k (error)))
+         ((apply-k-t k v) (apply-k k v))))
+     0))
+  
+  (define (main)
+    (let ((e (app (Lambda (variable 0)) (Lambda (variable 0)))))
+      (let* ((k (k-t (eval-k e (empty-env) (initial-k))))
+             (k (apply-thunk k))
+             (k (apply-thunk k))
+             (k (apply-thunk k))
+             (k (apply-thunk k))
+             (k (apply-thunk k))
+             (k (apply-thunk k))
+             (k (apply-thunk k))
+             (k (apply-thunk k)))
+        0))
+      ;;(print-val (value-of e (empty-env)))
+      ;;(println ""))
+    0)
+  )

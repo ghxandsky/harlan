@@ -1,35 +1,8 @@
 (module
 
-  (define-datatype Expr
-    (variable int)
-    (lambda Expr)
-    (app Expr Expr))
-
-  (define (subst e i v)
-    (match e
-      ((variable n)
-       (if (= n i)
-           v
-           (variable n)))
-      ((lambda e)
-       (lambda (subst e (+ 1 i) v)))
-      ((app e1 e2)
-       (app (subst e1 i v) (subst e2 i v)))))
-
-  (define (stepe e)
-    (match e
-      ((variable n) (variable n))
-      ((lambda e) (lambda e))
-      ((app e1 e2)
-       (match e1
-         ((variable n) (app (variable n) e2))
-         ((lambda e)
-          (subst e 0 e2))
-         ((app e1 e2)
-          (app (stepe e1) e2))))))
-
   (define (main)
-    (let ((e (app (lambda (variable 0)) (lambda (variable 0)))))
-      (stepe e))
-    (return 0))
+    (let ((add1 (lambda (x) (+ 1 x))))
+      (println (add1 5))
+      (assert (= 6 (add1 5))))
+    0)
   )

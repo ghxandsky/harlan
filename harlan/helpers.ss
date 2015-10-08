@@ -9,10 +9,12 @@
     member/var
     set-add/var
     remove/var
-    union/var)
+    union/var
+    >::>)
   (import
     (rnrs)
     (except (elegant-weapons helpers) ident?)
+    (harlan compile-opts)
     (elegant-weapons match))
 
   (define (reserved-word? x)
@@ -77,4 +79,11 @@
           (lambda (s1 s2) (fold-left set-add/var s1 s2))
           s s*)))))
 
-)
+  ;; I'm a horrible person for defining this.
+  (define-syntax >::>
+    (syntax-rules ()
+      ((_ e) e)
+      ((_ e (x a ...) e* ...)
+       (>::> (x e a ...) e* ...))
+      ((_ e x e* ...)
+       (>::> (x e) e* ...)))))
